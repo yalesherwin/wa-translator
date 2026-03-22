@@ -26,11 +26,11 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private static final int CAMERA_PERMISSION_REQUEST = 100;
 
-    // Mimic real Chrome on Android — WhatsApp checks this carefully
+    // Desktop Chrome UA — WhatsApp Web blocks mobile UA with redirect page
     private static final String CHROME_UA =
-        "Mozilla/5.0 (Linux; Android 13; Pixel 7) " +
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/120.0.6099.144 Mobile Safari/537.36";
+        "Chrome/124.0.0.0 Safari/537.36";
 
     // JS injected before page runs — masks WebView fingerprint
     private static final String ANTI_DETECT_JS =
@@ -38,7 +38,7 @@ public class MainActivity extends AppCompatActivity {
         "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});" +
         "Object.defineProperty(navigator,'languages',{get:()=>['zh-CN','zh','en']});" +
         "window.chrome={runtime:{}};" +
-        "Object.defineProperty(navigator,'platform',{get:()=>'Linux armv8l'});";
+        "Object.defineProperty(navigator,'platform',{get:()=>'Win32'});";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

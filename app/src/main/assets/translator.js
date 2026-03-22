@@ -3,7 +3,7 @@
   if (window.__cnu_loaded) return;
   window.__cnu_loaded = true;
 
-  const VER = 'v1.0.11';
+  const VER = 'v1.0.12';
 
   // ─── DeepL 语言代码映射 ────────────────────────────────────────
   const DEEPL_LANG = {
