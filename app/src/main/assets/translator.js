@@ -3,7 +3,7 @@
   if (window.__cnu_loaded) return;
   window.__cnu_loaded = true;
 
-  const VER = 'v1.0.12';
+  const VER = 'v1.0.13';
 
   // ─── DeepL 语言代码映射 ────────────────────────────────────────
   const DEEPL_LANG = {
@@ -292,14 +292,24 @@
   // ─── 收到消息自动翻译 ─────────────────────────────────────────
   const done = new WeakSet();
 
+  // Find the text span inside a message bubble (works across WA Web versions)
+  function getTextEl(el) {
+    return el.querySelector('span.selectable-text.copyable-text')
+        || el.querySelector('span.selectable-text')
+        || el.querySelector('[class*="selectable-text"]')
+        || el.querySelector('[class*="copyable-text"] span')
+        || el.querySelector('span[dir]');
+  }
+
   function addTranslation(el) {
     if (done.has(el)) return;
     done.add(el);
-    const textEl = el.querySelector('span.selectable-text')
-                || el.querySelector('[class*="copyable-text"]');
+    const textEl = getTextEl(el);
     if (!textEl) return;
     const text = textEl.innerText?.trim();
     if (!text || text.length < 2) return;
+    // Skip if translation already injected
+    if (textEl.nextElementSibling?.classList?.contains('cnu-r')) return;
 
     tr(text, 'auto', cfg.tgt).then(res => {
       if (!res || res === text) return;
@@ -311,16 +321,20 @@
   }
 
   function scan() {
-    document.querySelectorAll('[class*="message-in"]').forEach(m => {
-      try { addTranslation(m); } catch (_) {}
-    });
+    // Try multiple selectors for incoming messages across WA Web versions
+    const msgs = document.querySelectorAll(
+      '[class*="message-in"], [data-id][class*="focusable-list-item"] [class*="in"]'
+    );
+    msgs.forEach(m => { try { addTranslation(m); } catch (_) {} });
   }
 
   new MutationObserver(() => {
     clearTimeout(window.__cnuT);
-    window.__cnuT = setTimeout(scan, 600);
+    window.__cnuT = setTimeout(scan, 800);
   }).observe(document.body, { childList: true, subtree: true });
-  setTimeout(scan, 2500);
+  // Scan multiple times as WA Web loads content asynchronously
+  setTimeout(scan, 3000);
+  setTimeout(scan, 6000);
 
   // ─── 发送翻译条（贴键盘顶部）────────────────────────────────
   const bar = document.createElement('div');
@@ -346,9 +360,11 @@
   let originalText = '';
 
   const getInput = () =>
+    document.querySelector('[data-tab="10"][contenteditable="true"]') ||
     document.querySelector('footer [contenteditable="true"]') ||
     document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-    document.querySelector('[data-tab="10"][contenteditable="true"]');
+    document.querySelector('[contenteditable="true"][class*="selectable-text"]') ||
+    document.querySelector('div[contenteditable="true"][spellcheck]');
 
   const getWASendBtn = () =>
     document.querySelector('[data-testid="send"]') ||
