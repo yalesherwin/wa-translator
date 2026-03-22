@@ -3,8 +3,6 @@ name: Build APK
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -27,13 +25,12 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
       with:
-        gradle-version: '8.2'
+        gradle-version: '8.4'
 
     - name: Generate Gradle Wrapper
-      run: gradle wrapper --gradle-version 8.2
-
-    - name: Grant execute permission for gradlew
-      run: chmod +x gradlew
+      run: |
+        gradle wrapper --gradle-version=8.4 --distribution-type=bin
+        chmod +x gradlew
 
     - name: Generate Keystore
       run: |
@@ -47,23 +44,16 @@ jobs:
           -keypass chinacnu2024 \
           -dname "CN=ChinaCNU, OU=App, O=ChinaCNU, L=China, S=China, C=CN"
 
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
-
     - name: Build Release APK
       env:
         KEYSTORE_PATH: keystore.jks
         KEYSTORE_PASSWORD: chinacnu2024
         KEY_ALIAS: chinacnu
         KEY_PASSWORD: chinacnu2024
-      run: ./gradlew assembleRelease
+      run: ./gradlew assembleRelease --stacktrace
 
-    - name: Upload Debug APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: WA翻译助手-debug
-        path: app/build/outputs/apk/debug/*.apk
-        retention-days: 30
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
 
     - name: Upload Release APK
       uses: actions/upload-artifact@v4
@@ -72,8 +62,15 @@ jobs:
         path: app/build/outputs/apk/release/*.apk
         retention-days: 30
 
-    - name: Create Release
-      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: WA翻译助手-debug
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 30
+
+    - name: Create GitHub Release
+      if: github.ref == 'refs/heads/main'
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v1.0.${{ github.run_number }}
@@ -81,18 +78,14 @@ jobs:
         body: |
           ## ChinaCNU WhatsApp 翻译助手
 
+          **下载 app-release.apk 安装到手机即可使用**
+
           ### 功能
-          - 登录自己的WhatsApp账号
+          - 登录自己的WhatsApp账号（扫二维码）
           - 收到外文消息自动翻译成中文
           - 支持18种语言互译
           - 中文输入自动翻译成英文发送
-
-          ### 安装
-          下载 `app-release.apk` 安装即可
-        files: |
-          app/build/outputs/apk/release/*.apk
-          app/build/outputs/apk/debug/*.apk
-        draft: false
-        prerelease: false
+          - 完全免费，无需注册
+        files: app/build/outputs/apk/release/*.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
