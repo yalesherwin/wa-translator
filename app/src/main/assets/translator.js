@@ -3,32 +3,69 @@
   if (window.__cnu_loaded) return;
   window.__cnu_loaded = true;
 
-  const VER = 'v1.0.9';
+  const VER = 'v1.0.10';
 
-  // ─── 翻译 API ─────────────────────────────────────────────────
+  // ─── DeepL 语言代码映射 ────────────────────────────────────────
+  const DEEPL_LANG = {
+    'zh-CN':'ZH','zh-TW':'ZH','en':'EN','es':'ES','fr':'FR',
+    'de':'DE','ar':'AR','pt':'PT-BR','ru':'RU','ja':'JA',
+    'ko':'KO','it':'IT','tr':'TR','id':'ID','vi':null
+  };
+
+  // ─── 翻译 API（DeepL → Google → MyMemory）────────────────────
+  async function trDeepL(text, src, tgt, apiKey) {
+    const dlTgt = DEEPL_LANG[tgt];
+    if (!dlTgt || !apiKey) throw new Error('no_deepl');
+    const body = { text: [text], target_lang: dlTgt };
+    if (src !== 'auto' && DEEPL_LANG[src]) body.source_lang = DEEPL_LANG[src];
+    const r = await fetch('https://api-free.deepl.com/v2/translate', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'DeepL-Auth-Key ' + apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(8000)
+    });
+    if (!r.ok) throw new Error('deepl_err_' + r.status);
+    const d = await r.json();
+    const res = d?.translations?.[0]?.text;
+    if (!res) throw new Error('deepl_empty');
+    return res;
+  }
+
+  async function trGoogle(text, src, tgt) {
+    const r = await fetch(
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(text)}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    if (d?.[0]) return d[0].map(x => x[0] || '').join('');
+    throw new Error('google_empty');
+  }
+
+  async function trMyMemory(text, src, tgt) {
+    const r = await fetch(
+      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${src === 'auto' ? 'en' : src}|${tgt}`,
+      { signal: AbortSignal.timeout(8000) }
+    );
+    const d = await r.json();
+    if (d?.responseData?.translatedText) return d.responseData.translatedText;
+    throw new Error('mymemory_empty');
+  }
+
   async function tr(text, src, tgt) {
     if (!text || !text.trim() || src === tgt) return text;
-    try {
-      const r = await fetch(
-        `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(text)}`,
-        { signal: AbortSignal.timeout(8000) }
-      );
-      const d = await r.json();
-      if (d?.[0]) return d[0].map(x => x[0] || '').join('');
-    } catch (_) {}
-    try {
-      const r2 = await fetch(
-        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${src === 'auto' ? 'en' : src}|${tgt}`,
-        { signal: AbortSignal.timeout(8000) }
-      );
-      const d2 = await r2.json();
-      if (d2?.responseData?.translatedText) return d2.responseData.translatedText;
-    } catch (_) {}
-    throw new Error('failed');
+    if (cfg.deeplKey) {
+      try { return await trDeepL(text, src, tgt, cfg.deeplKey); } catch (_) {}
+    }
+    try { return await trGoogle(text, src, tgt); } catch (_) {}
+    try { return await trMyMemory(text, src, tgt); } catch (_) {}
+    throw new Error('all_failed');
   }
 
   // ─── 设置 ─────────────────────────────────────────────────────
-  let cfg = { tgt: 'zh-CN', sendLang: 'en' };
+  let cfg = { tgt: 'zh-CN', sendLang: 'en', deeplKey: '' };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem('__cnu2') || '{}')); } catch (_) {}
   const save = () => localStorage.setItem('__cnu2', JSON.stringify(cfg));
 
@@ -41,10 +78,9 @@
   const opts = sel => Object.entries(LANGS)
     .map(([v,l]) => `<option value="${v}"${v===sel?' selected':''}>${l}</option>`).join('');
 
-  // ─── 样式（贴近WhatsApp原生设计语言）─────────────────────────
+  // ─── 样式 ─────────────────────────────────────────────────────
   const css = document.createElement('style');
   css.textContent = `
-    /* 收到消息的翻译文字 —— 仿WhatsApp内置翻译样式 */
     .cnu-r {
       display: block;
       font-size: 12.5px;
@@ -56,7 +92,6 @@
       cursor: default;
     }
 
-    /* 发送栏 —— 贴着键盘顶部，像WhatsApp的回复预览条 */
     #cnu-bar {
       position: fixed;
       left: 0; right: 0; bottom: 0;
@@ -118,7 +153,6 @@
     }
     #cnu-btn-send-tr:disabled { background: #a8e6c3; }
 
-    /* 设置入口 —— 极小，放在右上角不碍事 */
     #cnu-cfg-btn {
       position: fixed;
       top: 8px; right: 8px;
@@ -133,7 +167,6 @@
     }
     #cnu-cfg-btn:active { opacity: 1; }
 
-    /* 设置底部弹窗 —— 仿WhatsApp的BottomSheet */
     #cnu-drawer {
       position: fixed; inset: 0;
       background: rgba(0,0,0,.5);
@@ -173,6 +206,26 @@
       background: #fafafa; color: #333;
       max-width: 150px;
     }
+    .cnu-sh-key-wrap {
+      display: flex; flex-direction: column;
+      padding: 10px 20px 14px;
+      border-bottom: 1px solid #f5f5f5;
+      gap: 6px;
+    }
+    .cnu-sh-key-label {
+      font-size: 13px; color: #555;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .cnu-sh-key-label a { color: #667eea; font-size: 12px; text-decoration: none; }
+    input.cnu-key-input {
+      width: 100%; border: 1px solid #e0e0e0; border-radius: 10px;
+      padding: 9px 12px; font-size: 13px;
+      background: #fafafa; color: #333; box-sizing: border-box;
+    }
+    input.cnu-key-input:focus { border-color: #667eea; outline: none; }
+    .cnu-key-status {
+      font-size: 11px; color: #25d366; min-height: 14px;
+    }
     .cnu-sh-done {
       margin: 4px 16px 0;
       width: calc(100% - 32px);
@@ -205,15 +258,33 @@
         <span>中文发送为</span>
         <select class="cnu-s" id="cfgSend">${opts(cfg.sendLang)}</select>
       </div>
+      <div class="cnu-sh-key-wrap">
+        <div class="cnu-sh-key-label">
+          🔑 DeepL API Key（高质量翻译，可选）
+          <a href="https://www.deepl.com/pro-api" target="_blank">免费申请</a>
+        </div>
+        <input class="cnu-key-input" id="cfgDeeplKey" type="password"
+          placeholder="DeepL-Auth-Key xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
+          value="${cfg.deeplKey || ''}" autocomplete="off" />
+        <div class="cnu-key-status" id="cfgKeyStatus">${cfg.deeplKey ? '✓ 已配置 DeepL（优先使用）' : '未配置，使用 Google 翻译'}</div>
+      </div>
       <button class="cnu-sh-done" id="cfgDone">完成</button>
     </div>`;
   document.body.appendChild(drawer);
 
   cfgBtn.onclick = () => drawer.classList.add('show');
   drawer.addEventListener('click', e => { if (e.target === drawer) drawer.classList.remove('show'); });
+
+  document.getElementById('cfgDeeplKey').addEventListener('input', e => {
+    const v = e.target.value.trim();
+    document.getElementById('cfgKeyStatus').textContent =
+      v ? '✓ 保存后将优先使用 DeepL' : '未配置，使用 Google 翻译';
+  });
+
   document.getElementById('cfgDone').onclick = () => {
     cfg.tgt = document.getElementById('cfgTgt').value;
     cfg.sendLang = document.getElementById('cfgSend').value;
+    cfg.deeplKey = document.getElementById('cfgDeeplKey').value.trim();
     save();
     drawer.classList.remove('show');
   };
