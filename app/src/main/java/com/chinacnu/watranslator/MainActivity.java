@@ -44,10 +44,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setFlags(
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
-        );
+        // 全屏沉浸式（去掉 FLAG_LAYOUT_NO_LIMITS，避免国产机渲染异常）
+        getWindow().setStatusBarColor(android.graphics.Color.parseColor("#111b21"));
         setContentView(R.layout.activity_main);
         progressBar = findViewById(R.id.progressBar);
         webView = findViewById(R.id.webView);
@@ -175,9 +173,11 @@ public class MainActivity extends AppCompatActivity {
     private String loadAssetScript() {
         try {
             InputStream is = getAssets().open("translator.js");
-            byte[] buf = new byte[is.available()];
-            is.read(buf); is.close();
-            return new String(buf, "UTF-8");
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] buf = new byte[4096]; int n;
+            while ((n = is.read(buf)) != -1) out.write(buf, 0, n);
+            is.close();
+            return out.toString("UTF-8");
         } catch (IOException e) { return null; }
     }
 
