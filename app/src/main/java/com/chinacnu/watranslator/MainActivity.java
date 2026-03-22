@@ -142,20 +142,43 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void injectTranslationScript() {
-        // 从服务器动态加载最新脚本，无需更新 APK 即可迭代
-        // 如果网络不可用，自动降级到本地 assets 备份
-        String loaderJs =
-            "(function(){" +
-            "  var s = document.createElement('script');" +
-            "  s.src = 'https://wa.cnuday.com/translator.js?t=' + Date.now();" +
-            "  s.onerror = function(){" +
-            "    var fb = document.createElement('script');" +
-            "    fb.src = 'https://wa.cnuday.com/translator.js';" +
-            "    document.head.appendChild(fb);" +
-            "  };" +
-            "  document.head.appendChild(s);" +
-            "})();";
-        webView.evaluateJavascript(loaderJs, null);
+        // 用 Java 线程从服务器下载脚本，再通过 evaluateJavascript 注入
+        // 此方式完全绕过 WhatsApp Web 的 CSP 限制
+        new Thread(() -> {
+            String script = fetchRemoteScript();
+            if (script == null) script = loadAssetScript();
+            if (script == null) return;
+            final String finalScript = script;
+            webView.post(() -> webView.evaluateJavascript(finalScript, null));
+        }).start();
+    }
+
+    private String fetchRemoteScript() {
+        try {
+            java.net.URL url = new java.net.URL(
+                "https://wa.cnuday.com/translator.js?t=" + System.currentTimeMillis());
+            java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(6000);
+            conn.setReadTimeout(10000);
+            conn.setRequestProperty("User-Agent", CHROME_UA);
+            if (conn.getResponseCode() != 200) return null;
+            java.io.InputStream is = conn.getInputStream();
+            byte[] buf = new byte[65536];
+            StringBuilder sb = new StringBuilder();
+            int n;
+            while ((n = is.read(buf)) != -1) sb.append(new String(buf, 0, n, "UTF-8"));
+            is.close();
+            return sb.toString();
+        } catch (Exception e) { return null; }
+    }
+
+    private String loadAssetScript() {
+        try {
+            InputStream is = getAssets().open("translator.js");
+            byte[] buf = new byte[is.available()];
+            is.read(buf); is.close();
+            return new String(buf, "UTF-8");
+        } catch (IOException e) { return null; }
     }
 
     private void requestPermissions() {
