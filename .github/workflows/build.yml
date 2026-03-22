@@ -24,23 +24,28 @@ jobs:
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
 
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+      with:
+        gradle-version: '8.2'
+
+    - name: Generate Gradle Wrapper
+      run: gradle wrapper --gradle-version 8.2
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
-    - name: Generate Keystore (if not exists)
+    - name: Generate Keystore
       run: |
-        if [ ! -f app/keystore.jks ]; then
-          keytool -genkey -v \
-            -keystore app/keystore.jks \
-            -alias chinacnu \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass chinacnu2024 \
-            -keypass chinacnu2024 \
-            -dname "CN=ChinaCNU, OU=App, O=ChinaCNU, L=China, S=China, C=CN"
-          echo "Keystore generated"
-        fi
+        keytool -genkey -v \
+          -keystore app/keystore.jks \
+          -alias chinacnu \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -storepass chinacnu2024 \
+          -keypass chinacnu2024 \
+          -dname "CN=ChinaCNU, OU=App, O=ChinaCNU, L=China, S=China, C=CN"
 
     - name: Build Debug APK
       run: ./gradlew assembleDebug
