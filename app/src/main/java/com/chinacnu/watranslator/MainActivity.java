@@ -40,14 +40,6 @@ public class MainActivity extends AppCompatActivity {
         "window.chrome={runtime:{}};" +
         "Object.defineProperty(navigator,'platform',{get:()=>'Win32'});";
 
-    // Force WhatsApp Web into responsive single-panel mode (like mobile)
-    // Desktop UA bypasses the block; device-width viewport triggers responsive CSS (<960px = single panel)
-    private static final String VIEWPORT_JS =
-        "(function(){" +
-        "var m=document.querySelector('meta[name=\"viewport\"]');" +
-        "if(!m){m=document.createElement('meta');m.name='viewport';document.head.appendChild(m);}" +
-        "m.content='width=device-width,initial-scale=1.0,maximum-scale=5.0,user-scalable=yes';" +
-        "})();";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -76,8 +68,8 @@ public class MainActivity extends AppCompatActivity {
         settings.setDatabaseEnabled(true);
         settings.setAllowFileAccess(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setLoadWithOverviewMode(false);
-        settings.setUseWideViewPort(false);  // forces device-width viewport → triggers WA responsive layout
+        settings.setLoadWithOverviewMode(true);
+        settings.setUseWideViewPort(true);
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
         settings.setSupportZoom(true);
@@ -110,7 +102,6 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 progressBar.setVisibility(View.GONE);
                 view.evaluateJavascript(ANTI_DETECT_JS, null);
-                view.evaluateJavascript(VIEWPORT_JS, null);
                 injectTranslationScript();
             }
 

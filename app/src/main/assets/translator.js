@@ -3,7 +3,7 @@
   if (window.__cnu_loaded) return;
   window.__cnu_loaded = true;
 
-  const VER = 'v1.0.13';
+  const VER = 'v1.0.14';
 
   // ─── DeepL 语言代码映射 ────────────────────────────────────────
   const DEEPL_LANG = {
@@ -27,7 +27,7 @@
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(8000)
     });
-    if (!r.ok) throw new Error('deepl_err_' + r.status);
+    if (!r.ok) throw new Error('deepl_' + r.status);
     const d = await r.json();
     const res = d?.translations?.[0]?.text;
     if (!res) throw new Error('deepl_empty');
@@ -81,6 +81,31 @@
   // ─── 样式 ─────────────────────────────────────────────────────
   const css = document.createElement('style');
   css.textContent = `
+    /* ── 手机单栏布局 ─────────────────────────────────────────── */
+    #pane-side {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
+      max-width: 100% !important;
+      transform: translateX(0);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      z-index: 50 !important;
+      overflow-y: auto !important;
+    }
+    #main {
+      position: fixed !important;
+      top: 0 !important; left: 0 !important;
+      width: 100% !important; height: 100% !important;
+      transform: translateX(100%);
+      transition: transform .28s cubic-bezier(.4,0,.2,1);
+      z-index: 50 !important;
+      overflow-y: auto !important;
+    }
+    /* 打开聊天时：联系人滑出，聊天滑入 */
+    .cnu-chat-open #pane-side { transform: translateX(-100%); }
+    .cnu-chat-open #main { transform: translateX(0); }
+
+    /* ── 翻译文字 ─────────────────────────────────────────────── */
     .cnu-r {
       display: block;
       font-size: 12.5px;
@@ -89,30 +114,24 @@
       line-height: 1.5;
       border-top: 1px solid rgba(0,0,0,.06);
       padding-top: 3px;
-      cursor: default;
     }
 
+    /* ── 发送翻译条 ───────────────────────────────────────────── */
     #cnu-bar {
       position: fixed;
       left: 0; right: 0; bottom: 0;
       background: #f0f2fe;
       border-top: 1px solid #d0d5f8;
-      display: none;
-      flex-direction: column;
+      display: none; flex-direction: column;
       z-index: 99999;
-      padding: 0;
     }
     #cnu-bar.show { display: flex; }
-
     #cnu-bar-preview {
-      display: flex;
-      align-items: center;
-      padding: 8px 14px 8px 12px;
-      gap: 10px;
+      display: flex; align-items: center;
+      padding: 8px 14px 8px 12px; gap: 10px;
       border-left: 3px solid #667eea;
       margin: 8px 10px 0;
-      background: rgba(102,126,234,.08);
-      border-radius: 6px;
+      background: rgba(102,126,234,.08); border-radius: 6px;
     }
     #cnu-bar-preview .cnu-icon { font-size: 16px; flex-shrink: 0; }
     #cnu-bar-preview .cnu-texts { flex: 1; min-width: 0; }
@@ -129,44 +148,34 @@
       font-size: 20px; cursor: pointer; padding: 2px 0 2px 6px;
       flex-shrink: 0; line-height: 1;
     }
-    #cnu-bar-actions {
-      display: flex;
-      gap: 8px;
-      padding: 8px 10px 10px;
-    }
+    #cnu-bar-actions { display: flex; gap: 8px; padding: 8px 10px 10px; }
     #cnu-btn-send-orig {
-      flex: 1;
-      background: #e9e9e9;
-      color: #555;
-      border: none; border-radius: 22px;
-      padding: 10px;
+      flex: 1; background: #e9e9e9; color: #555;
+      border: none; border-radius: 22px; padding: 10px;
       font-size: 13px; cursor: pointer;
     }
     #cnu-btn-send-tr {
-      flex: 2;
-      background: #25d366;
-      color: white;
-      border: none; border-radius: 22px;
-      padding: 10px 18px;
+      flex: 2; background: #25d366; color: white;
+      border: none; border-radius: 22px; padding: 10px 18px;
       font-size: 14px; font-weight: 700; cursor: pointer;
       display: flex; align-items: center; justify-content: center; gap: 6px;
     }
     #cnu-btn-send-tr:disabled { background: #a8e6c3; }
 
+    /* ── 设置按钮 ─────────────────────────────────────────────── */
     #cnu-cfg-btn {
-      position: fixed;
-      top: 8px; right: 8px;
+      position: fixed; top: 8px; right: 8px;
       width: 26px; height: 26px;
       background: rgba(255,255,255,.7);
       border: none; border-radius: 50%;
       font-size: 13px; cursor: pointer;
       z-index: 99997;
       display: flex; align-items: center; justify-content: center;
-      opacity: .5;
-      backdrop-filter: blur(4px);
+      opacity: .5; backdrop-filter: blur(4px);
     }
     #cnu-cfg-btn:active { opacity: 1; }
 
+    /* ── 设置底部弹窗 ─────────────────────────────────────────── */
     #cnu-drawer {
       position: fixed; inset: 0;
       background: rgba(0,0,0,.5);
@@ -175,10 +184,8 @@
     }
     #cnu-drawer.show { display: flex; }
     #cnu-sheet {
-      background: #fff;
-      border-radius: 18px 18px 0 0;
-      width: 100%;
-      padding: 0 0 32px;
+      background: #fff; border-radius: 18px 18px 0 0;
+      width: 100%; padding: 0 0 32px;
       animation: slideUp .22s ease;
     }
     @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
@@ -188,34 +195,24 @@
     }
     .cnu-sh-title {
       font-size: 16px; font-weight: 700; color: #111;
-      padding: 16px 20px 8px;
-      border-bottom: 1px solid #f0f0f0;
+      padding: 16px 20px 8px; border-bottom: 1px solid #f0f0f0;
     }
     .cnu-sh-ver { font-size: 11px; color: #bbb; font-weight: 400; margin-left: 6px; }
     .cnu-sh-row {
-      display: flex; align-items: center;
-      justify-content: space-between;
-      padding: 14px 20px;
-      border-bottom: 1px solid #f5f5f5;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 14px 20px; border-bottom: 1px solid #f5f5f5;
       font-size: 15px; color: #222;
     }
-    .cnu-sh-row:last-of-type { border: none; }
     select.cnu-s {
       border: 1px solid #e0e0e0; border-radius: 10px;
       padding: 7px 12px; font-size: 13px;
-      background: #fafafa; color: #333;
-      max-width: 150px;
+      background: #fafafa; color: #333; max-width: 150px;
     }
     .cnu-sh-key-wrap {
       display: flex; flex-direction: column;
-      padding: 10px 20px 14px;
-      border-bottom: 1px solid #f5f5f5;
-      gap: 6px;
+      padding: 10px 20px 14px; border-bottom: 1px solid #f5f5f5; gap: 6px;
     }
-    .cnu-sh-key-label {
-      font-size: 13px; color: #555;
-      display: flex; align-items: center; gap: 6px;
-    }
+    .cnu-sh-key-label { font-size: 13px; color: #555; display: flex; align-items: center; gap: 6px; }
     .cnu-sh-key-label a { color: #667eea; font-size: 12px; text-decoration: none; }
     input.cnu-key-input {
       width: 100%; border: 1px solid #e0e0e0; border-radius: 10px;
@@ -223,18 +220,46 @@
       background: #fafafa; color: #333; box-sizing: border-box;
     }
     input.cnu-key-input:focus { border-color: #667eea; outline: none; }
-    .cnu-key-status {
-      font-size: 11px; color: #25d366; min-height: 14px;
-    }
+    .cnu-key-status { font-size: 11px; color: #25d366; min-height: 14px; }
     .cnu-sh-done {
-      margin: 4px 16px 0;
-      width: calc(100% - 32px);
-      background: #25d366;
-      color: white; border: none; border-radius: 12px;
+      margin: 4px 16px 0; width: calc(100% - 32px);
+      background: #25d366; color: white; border: none; border-radius: 12px;
       padding: 14px; font-size: 16px; font-weight: 700; cursor: pointer;
     }
   `;
   document.head.appendChild(css);
+
+  // ─── 手机单栏布局注入 ─────────────────────────────────────────
+  // 把桌面双栏改为手机单栏：联系人 ↔ 聊天 滑动切换
+  let layoutReady = false;
+
+  function setupMobileLayout() {
+    const side = document.getElementById('pane-side');
+    const main = document.getElementById('main');
+    if (!side || !main) return false;
+    if (layoutReady) return true;
+    layoutReady = true;
+
+    function checkChat() {
+      // 检测聊天面板是否有内容（有 header = 已打开某个聊天）
+      const open = !!(
+        main.querySelector('header') ||
+        main.querySelector('[data-testid="conversation-header"]') ||
+        main.querySelector('[class*="chat-body"]')
+      );
+      document.documentElement.classList.toggle('cnu-chat-open', open);
+    }
+
+    new MutationObserver(checkChat)
+      .observe(document.body, { childList: true, subtree: true });
+    checkChat();
+    return true;
+  }
+
+  function tryLayout() {
+    if (!setupMobileLayout()) setTimeout(tryLayout, 600);
+  }
+  setTimeout(tryLayout, 1500);
 
   // ─── 设置按钮 & 底部弹窗 ─────────────────────────────────────
   const cfgBtn = document.createElement('button');
@@ -260,11 +285,11 @@
       </div>
       <div class="cnu-sh-key-wrap">
         <div class="cnu-sh-key-label">
-          🔑 DeepL API Key（高质量翻译，可选）
+          🔑 DeepL API Key
           <a href="https://www.deepl.com/pro-api" target="_blank">免费申请</a>
         </div>
         <input class="cnu-key-input" id="cfgDeeplKey" type="password"
-          placeholder="DeepL-Auth-Key xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
+          placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx"
           value="${cfg.deeplKey || ''}" autocomplete="off" />
         <div class="cnu-key-status" id="cfgKeyStatus">${cfg.deeplKey ? '✓ 已配置 DeepL（优先使用）' : '未配置，使用 Google 翻译'}</div>
       </div>
@@ -274,13 +299,11 @@
 
   cfgBtn.onclick = () => drawer.classList.add('show');
   drawer.addEventListener('click', e => { if (e.target === drawer) drawer.classList.remove('show'); });
-
   document.getElementById('cfgDeeplKey').addEventListener('input', e => {
     const v = e.target.value.trim();
     document.getElementById('cfgKeyStatus').textContent =
       v ? '✓ 保存后将优先使用 DeepL' : '未配置，使用 Google 翻译';
   });
-
   document.getElementById('cfgDone').onclick = () => {
     cfg.tgt = document.getElementById('cfgTgt').value;
     cfg.sendLang = document.getElementById('cfgSend').value;
@@ -292,13 +315,13 @@
   // ─── 收到消息自动翻译 ─────────────────────────────────────────
   const done = new WeakSet();
 
-  // Find the text span inside a message bubble (works across WA Web versions)
   function getTextEl(el) {
+    // 多重选择器兼容不同版本 WhatsApp Web
     return el.querySelector('span.selectable-text.copyable-text')
         || el.querySelector('span.selectable-text')
         || el.querySelector('[class*="selectable-text"]')
         || el.querySelector('[class*="copyable-text"] span')
-        || el.querySelector('span[dir]');
+        || el.querySelector('span[dir="ltr"], span[dir="rtl"]');
   }
 
   function addTranslation(el) {
@@ -308,7 +331,6 @@
     if (!textEl) return;
     const text = textEl.innerText?.trim();
     if (!text || text.length < 2) return;
-    // Skip if translation already injected
     if (textEl.nextElementSibling?.classList?.contains('cnu-r')) return;
 
     tr(text, 'auto', cfg.tgt).then(res => {
@@ -321,22 +343,20 @@
   }
 
   function scan() {
-    // Try multiple selectors for incoming messages across WA Web versions
-    const msgs = document.querySelectorAll(
-      '[class*="message-in"], [data-id][class*="focusable-list-item"] [class*="in"]'
-    );
-    msgs.forEach(m => { try { addTranslation(m); } catch (_) {} });
+    document.querySelectorAll('[class*="message-in"]').forEach(m => {
+      try { addTranslation(m); } catch (_) {}
+    });
   }
 
   new MutationObserver(() => {
     clearTimeout(window.__cnuT);
     window.__cnuT = setTimeout(scan, 800);
   }).observe(document.body, { childList: true, subtree: true });
-  // Scan multiple times as WA Web loads content asynchronously
+
   setTimeout(scan, 3000);
   setTimeout(scan, 6000);
 
-  // ─── 发送翻译条（贴键盘顶部）────────────────────────────────
+  // ─── 发送翻译条 ───────────────────────────────────────────────
   const bar = document.createElement('div');
   bar.id = 'cnu-bar';
   bar.innerHTML = `
@@ -351,19 +371,17 @@
     <div id="cnu-bar-actions">
       <button id="cnu-btn-send-orig">发送原文</button>
       <button id="cnu-btn-send-tr" disabled>
-        <span>🌐</span><span id="cnuSendLabel">发送翻译</span>
+        <span>🌐</span><span>发送翻译</span>
       </button>
     </div>`;
   document.body.appendChild(bar);
 
   let pending = '';
-  let originalText = '';
 
   const getInput = () =>
     document.querySelector('[data-tab="10"][contenteditable="true"]') ||
     document.querySelector('footer [contenteditable="true"]') ||
     document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-    document.querySelector('[contenteditable="true"][class*="selectable-text"]') ||
     document.querySelector('div[contenteditable="true"][spellcheck]');
 
   const getWASendBtn = () =>
@@ -389,18 +407,12 @@
   function hideBar() {
     bar.classList.remove('show');
     pending = '';
-    originalText = '';
     document.getElementById('cnu-btn-send-tr').disabled = true;
     document.getElementById('cnuTo').textContent = '翻译中…';
   }
 
   document.getElementById('cnuCancel').onclick = hideBar;
-
-  document.getElementById('cnu-btn-send-orig').onclick = () => {
-    hideBar();
-    setTimeout(doSend, 100);
-  };
-
+  document.getElementById('cnu-btn-send-orig').onclick = () => { hideBar(); setTimeout(doSend, 100); };
   document.getElementById('cnu-btn-send-tr').onclick = async () => {
     if (!pending) return;
     const input = getInput();
@@ -411,18 +423,16 @@
   };
 
   // 键盘弹出时发送条跟随
-  let kbH = 0;
   if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', () => {
-      kbH = Math.max(0, window.innerHeight - window.visualViewport.height);
+      const kbH = Math.max(0, window.innerHeight - window.visualViewport.height);
       bar.style.bottom = kbH > 50 ? kbH + 'px' : '0';
       cfgBtn.style.display = kbH > 150 ? 'none' : 'flex';
     });
   }
 
-  // 监听输入框变化
-  let trTimer;
-  let lastInput = '';
+  // ─── 监听输入框（中文自动出现翻译预览）────────────────────────
+  let trTimer, lastInput = '';
 
   function watchInput() {
     const input = getInput();
@@ -435,7 +445,6 @@
       hideBar();
       if (!text || !/[\u4e00-\u9fa5]/.test(text)) return;
 
-      originalText = text;
       document.getElementById('cnuFrom').textContent = text.length > 30 ? text.slice(0,30)+'…' : text;
       document.getElementById('cnuTo').textContent = '翻译中…';
       document.getElementById('cnu-btn-send-tr').disabled = true;
@@ -447,14 +456,11 @@
           pending = res;
           document.getElementById('cnuTo').textContent = res.length > 40 ? res.slice(0,40)+'…' : res;
           document.getElementById('cnu-btn-send-tr').disabled = false;
-        } catch (_) {
-          hideBar();
-        }
+        } catch (_) { hideBar(); }
       }, 700);
     });
   }
 
-  // 等待输入框出现后挂载
   const inputObs = new MutationObserver(() => {
     if (getInput()) { watchInput(); inputObs.disconnect(); }
   });
