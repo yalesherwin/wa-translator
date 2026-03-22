@@ -142,16 +142,20 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void injectTranslationScript() {
-        try {
-            InputStream is = getAssets().open("translator.js");
-            byte[] buffer = new byte[is.available()];
-            is.read(buffer);
-            is.close();
-            String script = new String(buffer, "UTF-8");
-            webView.evaluateJavascript(script, null);
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        // 从服务器动态加载最新脚本，无需更新 APK 即可迭代
+        // 如果网络不可用，自动降级到本地 assets 备份
+        String loaderJs =
+            "(function(){" +
+            "  var s = document.createElement('script');" +
+            "  s.src = 'https://wa.cnuday.com/translator.js?t=' + Date.now();" +
+            "  s.onerror = function(){" +
+            "    var fb = document.createElement('script');" +
+            "    fb.src = 'https://wa.cnuday.com/translator.js';" +
+            "    document.head.appendChild(fb);" +
+            "  };" +
+            "  document.head.appendChild(s);" +
+            "})();";
+        webView.evaluateJavascript(loaderJs, null);
     }
 
     private void requestPermissions() {
