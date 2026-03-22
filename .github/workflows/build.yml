@@ -1,0 +1,93 @@
+name: Build APK
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Generate Keystore (if not exists)
+      run: |
+        if [ ! -f app/keystore.jks ]; then
+          keytool -genkey -v \
+            -keystore app/keystore.jks \
+            -alias chinacnu \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -storepass chinacnu2024 \
+            -keypass chinacnu2024 \
+            -dname "CN=ChinaCNU, OU=App, O=ChinaCNU, L=China, S=China, C=CN"
+          echo "Keystore generated"
+        fi
+
+    - name: Build Debug APK
+      run: ./gradlew assembleDebug
+
+    - name: Build Release APK
+      env:
+        KEYSTORE_PATH: keystore.jks
+        KEYSTORE_PASSWORD: chinacnu2024
+        KEY_ALIAS: chinacnu
+        KEY_PASSWORD: chinacnu2024
+      run: ./gradlew assembleRelease
+
+    - name: Upload Debug APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: WA翻译助手-debug
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 30
+
+    - name: Upload Release APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: WA翻译助手-release
+        path: app/build/outputs/apk/release/*.apk
+        retention-days: 30
+
+    - name: Create Release
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: "WA翻译助手 v1.0.${{ github.run_number }}"
+        body: |
+          ## ChinaCNU WhatsApp 翻译助手
+
+          ### 功能
+          - 登录自己的WhatsApp账号
+          - 收到外文消息自动翻译成中文
+          - 支持18种语言互译
+          - 中文输入自动翻译成英文发送
+
+          ### 安装
+          下载 `app-release.apk` 安装即可
+        files: |
+          app/build/outputs/apk/release/*.apk
+          app/build/outputs/apk/debug/*.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
