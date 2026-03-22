@@ -91,7 +91,7 @@
       position: fixed !important;
       top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
-      overflow-y: auto !important;
+      /* 不加 overflow-y，让 WA 自己管理内部滚动 */
       background: #fff;
       transform: translateX(0);
       transition: transform .28s cubic-bezier(.4,0,.2,1);
@@ -101,7 +101,7 @@
       position: fixed !important;
       top: 0 !important; left: 0 !important;
       width: 100% !important; height: 100% !important;
-      overflow-y: auto !important;
+      /* 不加 overflow-y，让 WA 内部 flex 布局自己处理（输入栏贴底、消息列表滚动）*/
       background: #fff;
       transform: translateX(100%);
       transition: transform .28s cubic-bezier(.4,0,.2,1);
@@ -162,17 +162,16 @@
     }
     #cnu-btn-tr:disabled { background: #a8e6c3; }
 
-    /* ── 设置齿轮 ───────────────────────────────────────────────── */
+    /* ── 设置齿轮：放在右下角，输入栏上方，不遮 WA 内容 ──────── */
     #cnu-cfg-btn {
-      position: fixed; top: 10px; right: 10px;
-      width: 30px; height: 30px;
-      background: rgba(255,255,255,.85);
+      position: fixed; bottom: 76px; right: 14px;
+      width: 36px; height: 36px;
+      background: rgba(37,211,102,.9);
       border: none; border-radius: 50%;
-      font-size: 14px; cursor: pointer;
+      font-size: 16px; cursor: pointer;
       z-index: 999998;
       display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 1px 4px rgba(0,0,0,.2);
-      backdrop-filter: blur(4px);
+      box-shadow: 0 2px 8px rgba(0,0,0,.3);
     }
 
     /* ── 设置底部弹窗 ───────────────────────────────────────────── */
@@ -468,11 +467,19 @@
   };
 
   if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => {
-      const kbH = Math.max(0, window.innerHeight - window.visualViewport.height);
+    function onVPResize() {
+      const vph = window.visualViewport.height;
+      const kbH = Math.max(0, window.innerHeight - vph);
+      // 键盘弹出时，让面板高度等于可视区域高度，避免被键盘遮住
+      document.querySelectorAll('[data-cnu]').forEach(el => {
+        el.style.height = vph + 'px';
+      });
+      // 发送条和设置按钮跟随键盘顶部
       bar.style.bottom = kbH > 50 ? kbH + 'px' : '0';
-      cfgBtn.style.display = kbH > 150 ? 'none' : 'flex';
-    });
+      cfgBtn.style.bottom = kbH > 50 ? (kbH + 8) + 'px' : '76px';
+    }
+    window.visualViewport.addEventListener('resize', onVPResize);
+    window.visualViewport.addEventListener('scroll', onVPResize);
   }
 
   // ─── 监听中文输入，弹出翻译发送条 ────────────────────────────
