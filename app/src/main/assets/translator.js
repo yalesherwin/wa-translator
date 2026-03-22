@@ -1,409 +1,312 @@
-/**
- * ChinaCNU WhatsApp 翻译注入脚本
- * 适用于 iOS Safari 书签脚本 + 其他浏览器
- * 在 web.whatsapp.com 运行
- */
 (function() {
   'use strict';
+  if (window.__cnu_loaded) return;
+  window.__cnu_loaded = true;
 
-  if (window.__chinacnu_translator_loaded) {
-    showToast('翻译助手已运行中');
-    return;
-  }
-  window.__chinacnu_translator_loaded = true;
-
-  // ==================== 翻译 API ====================
-  async function fetchWithTimeout(url, ms = 10000) {
-    const ctrl = new AbortController();
-    const tid = setTimeout(() => ctrl.abort(), ms);
-    try {
-      const r = await fetch(url, { signal: ctrl.signal });
-      clearTimeout(tid);
-      return r;
-    } catch(e) { clearTimeout(tid); throw e; }
-  }
-
-  async function translate(text, src, tgt) {
+  // ==================== 翻译API ====================
+  async function doTranslate(text, src, tgt) {
     if (!text || !text.trim()) return '';
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${src}&tl=${tgt}&dt=t&q=${encodeURIComponent(text)}`;
-      const r = await fetchWithTimeout(url);
+      const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       const d = await r.json();
       if (d && d[0]) return d[0].map(i => i[0] || '').join('');
-      throw new Error();
-    } catch(e) {
-      // fallback MyMemory
+    } catch(e) {}
+    try {
       const lp = `${src === 'auto' ? 'en' : src}|${tgt}`;
-      const url2 = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${lp}`;
-      const r2 = await fetchWithTimeout(url2);
+      const r2 = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${lp}`, { signal: AbortSignal.timeout(8000) });
       const d2 = await r2.json();
       if (d2?.responseData?.translatedText) return d2.responseData.translatedText;
-      throw new Error('翻译失败');
-    }
+    } catch(e) {}
+    throw new Error('翻译失败');
   }
 
   // ==================== 设置 ====================
-  function getSettings() {
-    try {
-      return JSON.parse(localStorage.getItem('__chinacnu_settings') || '{}');
-    } catch(e) { return {}; }
-  }
-  function saveSettings(s) {
-    localStorage.setItem('__chinacnu_settings', JSON.stringify(s));
-  }
+  let cfg = { on: true, auto: false, tgt: 'zh-CN', sendLang: 'en', autoSend: false };
+  try { Object.assign(cfg, JSON.parse(localStorage.getItem('__cnu') || '{}')); } catch(e) {}
+  function saveCfg() { localStorage.setItem('__cnu', JSON.stringify(cfg)); }
 
-  let settings = Object.assign({ enabled: true, autoTranslate: false, targetLang: 'zh-CN', sendLang: 'en', autoSend: false }, getSettings());
-
-  // ==================== UI Panel ====================
-  const LANG_NAMES = {
+  const LANGS = {
     'zh-CN':'中文简体','zh-TW':'中文繁体','en':'English','es':'Español',
     'fr':'Français','de':'Deutsch','ar':'العربية','pt':'Português',
-    'ru':'Русский','ja':'日本語','ko':'한국어','it':'Italiano',
-    'tr':'Türkçe','hi':'हिन्दी','vi':'Tiếng Việt'
+    'ru':'Русский','ja':'日本語','ko':'한국어','it':'Italiano','tr':'Türkçe'
   };
+  function langOpts(sel) {
+    return Object.entries(LANGS).map(([v,l]) =>
+      `<option value="${v}"${v===sel?' selected':''}>${l}</option>`).join('');
+  }
 
-  const LANGS = Object.entries(LANG_NAMES).map(([v,l]) => `<option value="${v}">${l}</option>`).join('');
-
-  // Inject styles
+  // ==================== 样式 ====================
   const style = document.createElement('style');
   style.textContent = `
+    #cnu-fab {
+      position: fixed;
+      right: 14px;
+      bottom: 80px;
+      width: 48px; height: 48px;
+      background: linear-gradient(135deg,#667eea,#764ba2);
+      border-radius: 50%;
+      border: none;
+      color: white;
+      font-size: 22px;
+      cursor: pointer;
+      box-shadow: 0 3px 12px rgba(102,126,234,.5);
+      z-index: 99998;
+      display: flex; align-items: center; justify-content: center;
+      transition: bottom .2s, opacity .2s;
+    }
+    #cnu-fab.hidden { opacity: 0; pointer-events: none; }
     #cnu-panel {
       position: fixed;
+      right: 10px; left: 10px;
       bottom: 80px;
-      right: 16px;
-      z-index: 99999;
-      font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
-    }
-    #cnu-fab {
-      width: 52px;
-      height: 52px;
-      background: linear-gradient(135deg, #667eea, #764ba2);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(102,126,234,0.5);
-      border: none;
-      color: white;
-      transition: transform 0.2s;
-      margin-left: auto;
-    }
-    #cnu-fab:active { transform: scale(0.92); }
-    #cnu-popup {
-      display: none;
-      position: fixed;
-      bottom: 150px;
-      right: 12px;
-      width: 300px;
       background: white;
       border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+      box-shadow: 0 8px 32px rgba(0,0,0,.18);
       z-index: 99999;
       overflow: hidden;
+      display: none;
+      max-width: 360px;
+      margin: 0 auto;
     }
-    #cnu-popup.show { display: block; }
-    .cnu-header {
-      background: linear-gradient(135deg, #667eea, #764ba2);
+    #cnu-panel.show { display: block; }
+    .cnu-hd {
+      background: linear-gradient(135deg,#667eea,#764ba2);
       color: white;
-      padding: 14px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      padding: 12px 14px;
       font-weight: 700;
       font-size: 14px;
+      display: flex; align-items: center; justify-content: space-between;
     }
-    .cnu-close { cursor: pointer; font-size: 18px; opacity: 0.8; background:none; border:none; color:white; }
-    .cnu-body { padding: 14px; }
+    .cnu-close { background:none;border:none;color:white;font-size:18px;cursor:pointer;padding:0; }
+    .cnu-body { padding: 10px 14px; }
     .cnu-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+      display: flex; align-items: center; justify-content: space-between;
       padding: 8px 0;
       border-bottom: 1px solid #f0f0f0;
-      font-size: 14px;
+      font-size: 13px; color: #333;
     }
-    .cnu-row:last-child { border-bottom: none; }
-    .cnu-switch {
-      position: relative;
-      width: 44px;
-      height: 24px;
-      flex-shrink: 0;
+    .cnu-row:last-child { border: none; }
+    .cnu-sw { position:relative;width:42px;height:23px;flex-shrink:0; }
+    .cnu-sw input { opacity:0;width:0;height:0; }
+    .cnu-sl {
+      position:absolute;inset:0;background:#ccc;border-radius:23px;
+      cursor:pointer;transition:.3s;
     }
-    .cnu-switch input { opacity: 0; width: 0; height: 0; }
-    .cnu-slider {
-      position: absolute;
-      inset: 0;
-      background: #ccc;
-      border-radius: 24px;
-      cursor: pointer;
-      transition: 0.3s;
+    .cnu-sl::before {
+      content:'';position:absolute;width:17px;height:17px;
+      left:3px;bottom:3px;background:white;border-radius:50%;transition:.3s;
     }
-    .cnu-slider::before {
-      content: '';
-      position: absolute;
-      width: 18px;
-      height: 18px;
-      left: 3px;
-      bottom: 3px;
-      background: white;
-      border-radius: 50%;
-      transition: 0.3s;
+    input:checked+.cnu-sl { background:#667eea; }
+    input:checked+.cnu-sl::before { transform:translateX(19px); }
+    .cnu-sel {
+      border:1.5px solid #e0e0e0;border-radius:8px;
+      padding:4px 8px;font-size:12px;background:white;max-width:120px;
     }
-    input:checked + .cnu-slider { background: #667eea; }
-    input:checked + .cnu-slider::before { transform: translateX(20px); }
-    .cnu-select {
-      border: 1.5px solid #e0e0e0;
-      border-radius: 8px;
-      padding: 4px 8px;
-      font-size: 13px;
-      background: white;
-      cursor: pointer;
-      max-width: 130px;
+    .cnu-foot { padding:8px;text-align:center;font-size:11px;color:#bbb;background:#fafafa; }
+    .cnu-tbtn {
+      display:inline-flex;align-items:center;gap:3px;
+      background:#667eea;color:white;border:none;border-radius:10px;
+      padding:2px 8px;font-size:11px;cursor:pointer;
+      margin:3px 0 0 4px;vertical-align:middle;font-family:inherit;
     }
-    .cnu-footer {
-      background: #f9f9f9;
-      padding: 10px 14px;
-      font-size: 11px;
-      color: #aaa;
-      text-align: center;
-    }
-
-    /* Translation label on messages */
-    .cnu-translate-btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 3px;
-      background: #667eea;
-      color: white;
-      border: none;
-      border-radius: 10px;
-      padding: 2px 8px;
-      font-size: 11px;
-      cursor: pointer;
-      margin: 3px 0 0 4px;
-      vertical-align: middle;
-      font-family: inherit;
-    }
-    .cnu-translation-result {
-      display: block;
-      font-size: 12px;
-      color: #667eea;
-      margin-top: 4px;
-      padding-top: 4px;
-      border-top: 1px solid rgba(102,126,234,0.2);
-      line-height: 1.5;
+    .cnu-result {
+      display:block;font-size:12px;color:#667eea;
+      margin-top:4px;padding-top:4px;
+      border-top:1px solid rgba(102,126,234,.2);line-height:1.5;
     }
     .cnu-toast {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      background: rgba(0,0,0,0.8);
-      color: white;
-      padding: 10px 20px;
-      border-radius: 20px;
-      font-size: 14px;
-      z-index: 999999;
-      pointer-events: none;
-      transition: opacity 0.3s;
+      position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+      background:rgba(0,0,0,.75);color:white;
+      padding:9px 18px;border-radius:20px;
+      font-size:13px;z-index:999999;pointer-events:none;
     }
   `;
   document.head.appendChild(style);
 
-  // Toast
-  function showToast(msg) {
-    const t = document.createElement('div');
-    t.className = 'cnu-toast';
-    t.textContent = msg;
-    document.body.appendChild(t);
-    setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 1800);
-  }
+  // ==================== FAB & 面板 ====================
+  const fab = document.createElement('button');
+  fab.id = 'cnu-fab'; fab.textContent = '🌐';
+  document.body.appendChild(fab);
 
-  // Panel HTML
-  const panelEl = document.createElement('div');
-  panelEl.id = 'cnu-panel';
-  panelEl.innerHTML = `
-    <div id="cnu-popup">
-      <div class="cnu-header">
-        🌐 ChinaCNU 翻译助手
-        <button class="cnu-close" id="cnuClose">✕</button>
-      </div>
-      <div class="cnu-body">
-        <div class="cnu-row">
-          <span>启用翻译</span>
-          <label class="cnu-switch"><input type="checkbox" id="cnuEnabled" ${settings.enabled?'checked':''}><span class="cnu-slider"></span></label>
-        </div>
-        <div class="cnu-row">
-          <span>自动翻译新消息</span>
-          <label class="cnu-switch"><input type="checkbox" id="cnuAuto" ${settings.autoTranslate?'checked':''}><span class="cnu-slider"></span></label>
-        </div>
-        <div class="cnu-row">
-          <span>翻译为</span>
-          <select class="cnu-select" id="cnuTargetLang">${LANGS}</select>
-        </div>
-        <div class="cnu-row">
-          <span>中文自动发为</span>
-          <label class="cnu-switch"><input type="checkbox" id="cnuAutoSend" ${settings.autoSend?'checked':''}><span class="cnu-slider"></span></label>
-        </div>
-        <div class="cnu-row" id="cnuSendLangRow" style="${settings.autoSend?'':'opacity:0.4'}">
-          <span>发送语言</span>
-          <select class="cnu-select" id="cnuSendLang">${LANGS}</select>
-        </div>
-      </div>
-      <div class="cnu-footer">ChinaCNU · 外贸专业翻译工具 · 免费</div>
+  const panel = document.createElement('div');
+  panel.id = 'cnu-panel';
+  panel.innerHTML = `
+    <div class="cnu-hd">
+      <span>🌐 ChinaCNU 翻译助手</span>
+      <button class="cnu-close" id="cnuX">✕</button>
     </div>
-    <button id="cnu-fab" title="ChinaCNU翻译">🌐</button>
+    <div class="cnu-body">
+      <div class="cnu-row">
+        <span>启用翻译</span>
+        <label class="cnu-sw"><input type="checkbox" id="cnuOn"><span class="cnu-sl"></span></label>
+      </div>
+      <div class="cnu-row">
+        <span>自动翻译新消息</span>
+        <label class="cnu-sw"><input type="checkbox" id="cnuAuto"><span class="cnu-sl"></span></label>
+      </div>
+      <div class="cnu-row">
+        <span>翻译为</span>
+        <select class="cnu-sel" id="cnuTgt">${langOpts(cfg.tgt)}</select>
+      </div>
+      <div class="cnu-row">
+        <span>输入中文自动翻译发送</span>
+        <label class="cnu-sw"><input type="checkbox" id="cnuSend"><span class="cnu-sl"></span></label>
+      </div>
+      <div class="cnu-row" id="cnuSendRow" style="opacity:${cfg.autoSend?1:.4}">
+        <span>发送语言</span>
+        <select class="cnu-sel" id="cnuSendLang">${langOpts(cfg.sendLang)}</select>
+      </div>
+    </div>
+    <div class="cnu-foot">ChinaCNU · 外贸专业翻译 · 免费</div>
   `;
-  document.body.appendChild(panelEl);
+  document.body.appendChild(panel);
 
-  // Set values
-  document.getElementById('cnuTargetLang').value = settings.targetLang;
-  document.getElementById('cnuSendLang').value = settings.sendLang || 'en';
+  document.getElementById('cnuOn').checked = cfg.on;
+  document.getElementById('cnuAuto').checked = cfg.auto;
+  document.getElementById('cnuSend').checked = cfg.autoSend;
 
-  const popup = document.getElementById('cnu-popup');
-  const fab = document.getElementById('cnu-fab');
+  fab.addEventListener('click', () => panel.classList.toggle('show'));
+  document.getElementById('cnuX').addEventListener('click', () => panel.classList.remove('show'));
 
-  fab.addEventListener('click', () => {
-    popup.classList.toggle('show');
-  });
-  document.getElementById('cnuClose').addEventListener('click', () => {
-    popup.classList.remove('show');
-  });
-
-  // Settings change
-  ['cnuEnabled','cnuAuto','cnuAutoSend','cnuTargetLang','cnuSendLang'].forEach(id => {
-    const el = document.getElementById(id);
-    el.addEventListener('change', () => {
-      settings.enabled = document.getElementById('cnuEnabled').checked;
-      settings.autoTranslate = document.getElementById('cnuAuto').checked;
-      settings.autoSend = document.getElementById('cnuAutoSend').checked;
-      settings.targetLang = document.getElementById('cnuTargetLang').value;
-      settings.sendLang = document.getElementById('cnuSendLang').value;
-      document.getElementById('cnuSendLangRow').style.opacity = settings.autoSend ? '1' : '0.4';
-      saveSettings(settings);
-      showToast('设置已保存');
+  ['cnuOn','cnuAuto','cnuSend','cnuTgt','cnuSendLang'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => {
+      cfg.on       = document.getElementById('cnuOn').checked;
+      cfg.auto     = document.getElementById('cnuAuto').checked;
+      cfg.autoSend = document.getElementById('cnuSend').checked;
+      cfg.tgt      = document.getElementById('cnuTgt').value;
+      cfg.sendLang = document.getElementById('cnuSendLang').value;
+      document.getElementById('cnuSendRow').style.opacity = cfg.autoSend ? '1' : '.4';
+      saveCfg();
     });
   });
 
-  // ==================== Message translation ====================
-  const processed = new WeakSet();
+  // ==================== 键盘弹出时隐藏FAB ====================
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      const kbHeight = window.innerHeight - window.visualViewport.height;
+      if (kbHeight > 150) {
+        fab.classList.add('hidden');
+        panel.classList.remove('show');
+      } else {
+        fab.classList.remove('hidden');
+      }
+    });
+  }
 
-  function addTranslateButton(msgEl) {
-    if (processed.has(msgEl)) return;
-    processed.add(msgEl);
+  // ==================== Toast ====================
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'cnu-toast'; t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(() => { t.style.opacity='0'; setTimeout(()=>t.remove(),300); }, 1800);
+  }
 
-    const textEl = msgEl.querySelector('[class*="copyable-text"]') ||
-                   msgEl.querySelector('[data-pre-plain-text]') ||
-                   msgEl.querySelector('span[class*="_11JPr"]') ||
-                   msgEl.querySelector('span[class*="selectable-text"]');
+  // ==================== 消息翻译按钮 ====================
+  const done = new WeakSet();
+
+  function addBtn(el) {
+    if (done.has(el)) return;
+    done.add(el);
+    const textEl = el.querySelector('span.selectable-text')
+                || el.querySelector('[class*="copyable-text"]');
     if (!textEl) return;
-
     const text = textEl.innerText?.trim();
-    if (!text || text.length < 2) return;
-
-    // Skip if already has translation
-    if (msgEl.querySelector('.cnu-translation-result')) return;
+    if (!text || text.length < 1) return;
 
     const btn = document.createElement('button');
-    btn.className = 'cnu-translate-btn';
-    btn.innerHTML = '🌐 译';
-    btn.addEventListener('click', async (e) => {
+    btn.className = 'cnu-tbtn'; btn.innerHTML = '🌐 译';
+    btn.onclick = async e => {
       e.stopPropagation();
-      btn.textContent = '...';
-      btn.disabled = true;
+      btn.textContent = '…'; btn.disabled = true;
       try {
-        const result = await translate(text, 'auto', settings.targetLang);
-        let resultEl = msgEl.querySelector('.cnu-translation-result');
-        if (!resultEl) {
-          resultEl = document.createElement('span');
-          resultEl.className = 'cnu-translation-result';
-          textEl.parentNode.insertBefore(resultEl, textEl.nextSibling);
-        }
-        resultEl.textContent = '🌐 ' + result;
-        btn.textContent = '✓';
-        setTimeout(() => { btn.innerHTML = '🌐 译'; btn.disabled = false; }, 2000);
+        const res = await doTranslate(text, 'auto', cfg.tgt);
+        let r = el.querySelector('.cnu-result');
+        if (!r) { r = document.createElement('span'); r.className='cnu-result'; textEl.after(r); }
+        r.textContent = '🌐 ' + res;
       } catch(err) {
-        btn.textContent = '✗';
-        btn.disabled = false;
-        showToast('翻译失败，请检查网络');
-        setTimeout(() => { btn.innerHTML = '🌐 译'; }, 2000);
+        toast('翻译失败，请检查网络');
       }
-    });
+      btn.innerHTML = '🌐 译'; btn.disabled = false;
+    };
 
-    const footer = msgEl.querySelector('[class*="tail"]') ||
-                   msgEl.querySelector('[class*="status"]') ||
-                   textEl.parentElement;
-    if (footer) footer.appendChild(btn);
+    const foot = el.querySelector('[data-testid="msg-meta"]')
+               || el.querySelector('[class*="tail"]')
+               || textEl.parentElement;
+    if (foot) foot.appendChild(btn);
 
-    // Auto translate
-    if (settings.autoTranslate && settings.enabled) {
-      btn.click();
-    }
+    if (cfg.auto && cfg.on) btn.click();
   }
 
-  function scanMessages() {
-    if (!settings.enabled) return;
-    const msgs = document.querySelectorAll('[class*="message-in"], [data-id][class*="focusable-list-item"]');
-    msgs.forEach(m => {
-      try { addTranslateButton(m); } catch(e) {}
+  function scan() {
+    if (!cfg.on) return;
+    document.querySelectorAll('[class*="message-in"]').forEach(m => {
+      try { addBtn(m); } catch(e) {}
     });
   }
 
-  // Observer for new messages
-  const observer = new MutationObserver(() => {
-    if (settings.enabled) {
-      clearTimeout(window.__cnuScanTimer);
-      window.__cnuScanTimer = setTimeout(scanMessages, 500);
-    }
-  });
+  new MutationObserver(() => {
+    clearTimeout(window.__cnuT);
+    window.__cnuT = setTimeout(scan, 600);
+  }).observe(document.body, { childList: true, subtree: true });
+  setTimeout(scan, 2000);
 
-  observer.observe(document.body, { childList: true, subtree: true });
-  scanMessages();
-
-  // ==================== Send translation ====================
-  function setupSendTranslation() {
-    document.addEventListener('keydown', async (e) => {
-      if (!settings.autoSend || !settings.enabled) return;
-      if (e.key !== 'Enter' || e.shiftKey) return;
-
-      const input = document.querySelector('[data-tab="10"][contenteditable="true"]') ||
-                    document.querySelector('footer [contenteditable="true"]');
-      if (!input) return;
-
-      const text = input.innerText?.trim();
-      if (!text) return;
-
-      // Only translate if contains Chinese
-      if (!/[\u4e00-\u9fa5]/.test(text)) return;
-
-      e.preventDefault();
-      e.stopPropagation();
-
-      showToast('翻译中...');
-      try {
-        const translated = await translate(text, 'zh-CN', settings.sendLang);
-        input.innerText = translated;
-        // Trigger React/WhatsApp input update
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        // Send
-        setTimeout(() => {
-          const sendBtn = document.querySelector('[data-tab="11"]') ||
-                          document.querySelector('button[aria-label*="Send"]') ||
-                          document.querySelector('[data-testid="send"]');
-          if (sendBtn) sendBtn.click();
-        }, 100);
-      } catch(err) {
-        showToast('翻译失败，已发送原文');
-        // Send original
-        const sendBtn = document.querySelector('[data-tab="11"]') || document.querySelector('button[aria-label*="Send"]');
-        if (sendBtn) sendBtn.click();
-      }
-    }, true);
+  // ==================== 发送翻译（中文→目标语言）====================
+  function getInput() {
+    return document.querySelector('footer [contenteditable="true"]')
+        || document.querySelector('div[role="textbox"][contenteditable="true"]')
+        || document.querySelector('[data-tab="10"][contenteditable="true"]');
   }
 
-  setupSendTranslation();
+  function getSendBtn() {
+    return document.querySelector('[data-testid="send"]')
+        || document.querySelector('[data-tab="11"]')
+        || document.querySelector('button[aria-label*="Send"]')
+        || document.querySelector('span[data-icon="send"]')?.closest('button');
+  }
 
-  showToast('🌐 ChinaCNU翻译助手已启动！');
+  function setContent(el, text) {
+    el.focus();
+    const sel = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('insertText', false, text);
+  }
+
+  document.addEventListener('keydown', async e => {
+    if (!cfg.autoSend || !cfg.on) return;
+    if (e.key !== 'Enter' || e.shiftKey || e.ctrlKey || e.metaKey) return;
+
+    const input = getInput();
+    if (!input) return;
+
+    const text = input.innerText?.trim();
+    if (!text) return;
+
+    // 只翻译包含中文的内容
+    if (!/[\u4e00-\u9fa5]/.test(text)) return;
+
+    e.preventDefault();
+    e.stopImmediatePropagation();
+
+    toast('翻译中…');
+    try {
+      const translated = await doTranslate(text, 'zh-CN', cfg.sendLang);
+      setContent(input, translated);
+      await new Promise(r => setTimeout(r, 250));
+      const btn = getSendBtn();
+      if (btn) {
+        btn.click();
+      } else {
+        input.dispatchEvent(new KeyboardEvent('keydown',
+          { key:'Enter', code:'Enter', keyCode:13, which:13, bubbles:true }));
+      }
+    } catch(err) {
+      toast('翻译失败，原文已保留');
+    }
+  }, true);
+
+  toast('🌐 翻译助手已启动');
 })();
