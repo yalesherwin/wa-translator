@@ -3,7 +3,7 @@
   if (window.__cnu_loaded) return;
   window.__cnu_loaded = true;
 
-  const VER = 'v1.0.10';
+  const VER = 'v1.0.11';
 
   // ─── DeepL 语言代码映射 ────────────────────────────────────────
   const DEEPL_LANG = {
@@ -65,7 +65,7 @@
   }
 
   // ─── 设置 ─────────────────────────────────────────────────────
-  let cfg = { tgt: 'zh-CN', sendLang: 'en', deeplKey: '' };
+  let cfg = { tgt: 'zh-CN', sendLang: 'en', deeplKey: '130905f4-7b9e-43c3-981c-79890049c3d6:fx' };
   try { Object.assign(cfg, JSON.parse(localStorage.getItem('__cnu2') || '{}')); } catch (_) {}
   const save = () => localStorage.setItem('__cnu2', JSON.stringify(cfg));
 
