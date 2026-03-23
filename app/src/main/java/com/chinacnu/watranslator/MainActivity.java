@@ -26,19 +26,30 @@ public class MainActivity extends AppCompatActivity {
     private ProgressBar progressBar;
     private static final int CAMERA_PERMISSION_REQUEST = 100;
 
-    // Desktop Chrome UA — WhatsApp Web blocks mobile UA with redirect page
+    // Desktop Chrome 134 UA
     private static final String CHROME_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
         "AppleWebKit/537.36 (KHTML, like Gecko) " +
-        "Chrome/124.0.0.0 Safari/537.36";
+        "Chrome/134.0.6998.89 Safari/537.36";
 
-    // JS injected before page runs — masks WebView fingerprint
+    // 全面伪装 WebView 指纹，包含 userAgentData（WhatsApp 用此检测 WebView）
     private static final String ANTI_DETECT_JS =
         "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});" +
         "Object.defineProperty(navigator,'plugins',{get:()=>[1,2,3,4,5]});" +
-        "Object.defineProperty(navigator,'languages',{get:()=>['zh-CN','zh','en']});" +
-        "window.chrome={runtime:{}};" +
-        "Object.defineProperty(navigator,'platform',{get:()=>'Win32'});";
+        "Object.defineProperty(navigator,'languages',{get:()=>['zh-CN','zh','en-US','en']});" +
+        "Object.defineProperty(navigator,'platform',{get:()=>'Win32'});" +
+        "window.chrome={runtime:{},loadTimes:function(){},csi:function(){},app:{}};" +
+        // userAgentData 是关键 — 真实 Chrome 有，WebView 没有，WhatsApp 用此区分
+        "try{Object.defineProperty(navigator,'userAgentData',{get:()=>({" +
+        "  brands:[{brand:'Chromium',version:'134'},{brand:'Google Chrome',version:'134'},{brand:'Not-A.Brand',version:'24'}]," +
+        "  mobile:false,platform:'Windows'," +
+        "  getHighEntropyValues:(h)=>Promise.resolve({" +
+        "    architecture:'x86',bitness:'64',mobile:false,model:''," +
+        "    platform:'Windows',platformVersion:'15.0.0'," +
+        "    uaFullVersion:'134.0.6998.89'," +
+        "    fullVersionList:[{brand:'Google Chrome',version:'134.0.6998.89'},{brand:'Chromium',version:'134.0.6998.89'}]" +
+        "  })" +
+        "})});}catch(e){}";
 
 
     @Override
@@ -79,6 +90,11 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(false);
         }
+        // Android 13+: 禁止 WebView 自动添加 X-Requested-With 请求头
+        // 该头会暴露包名（com.chinacnu.watranslator），WhatsApp 以此识别 WebView
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            settings.setRequestedWithHeaderOriginAllowList(new java.util.HashSet<>());
+        }
 
         // Inject anti-detection JS before any page script runs
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -106,20 +122,21 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request,
                                         WebResourceError error) {
-                // Retry on error
-                if (request.isForMainFrame()) {
-                    view.loadUrl("https://web.whatsapp.com");
-                }
+                // 不再自动重试（会造成死循环），让用户手动刷新
             }
 
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
+                // 允许 WhatsApp 相关域名和 blob
                 if (url.startsWith("https://web.whatsapp.com") ||
                     url.startsWith("https://www.whatsapp.com") ||
-                    url.startsWith("blob:")) {
+                    url.startsWith("https://static.whatsapp.net") ||
+                    url.startsWith("blob:") ||
+                    url.startsWith("https://wa.me")) {
                     return false;
                 }
+                // 拦截其他域名（包括 Facebook 错误重定向）
                 return true;
             }
         });
