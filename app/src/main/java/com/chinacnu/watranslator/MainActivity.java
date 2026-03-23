@@ -90,11 +90,6 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             settings.setSafeBrowsingEnabled(false);
         }
-        // Android 13+: 禁止 WebView 自动添加 X-Requested-With 请求头
-        // 该头会暴露包名（com.chinacnu.watranslator），WhatsApp 以此识别 WebView
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            settings.setRequestedWithHeaderOriginAllowList(new java.util.HashSet<>());
-        }
 
         // Inject anti-detection JS before any page script runs
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
