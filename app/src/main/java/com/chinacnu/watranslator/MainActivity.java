@@ -19,6 +19,9 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -123,7 +126,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 String url = request.getUrl().toString();
-                // 允许 WhatsApp 相关域名和 blob
                 if (url.startsWith("https://web.whatsapp.com") ||
                     url.startsWith("https://www.whatsapp.com") ||
                     url.startsWith("https://static.whatsapp.net") ||
@@ -131,8 +133,76 @@ public class MainActivity extends AppCompatActivity {
                     url.startsWith("https://wa.me")) {
                     return false;
                 }
-                // 拦截其他域名（包括 Facebook 错误重定向）
                 return true;
+            }
+
+            // 关键修复：拦截 GET 请求，去掉 X-Requested-With 头
+            // Android WebView 会自动加 X-Requested-With: com.chinacnu.watranslator
+            // WhatsApp 服务器检测到此头后返回 4xx，触发 ERR_HTTP_RESPONSE_CODE_FAILURE
+            @Override
+            public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                // 只拦截 GET 请求，POST 让 WebView 正常处理（避免破坏登录流程）
+                if (!"GET".equals(request.getMethod())) return null;
+                // 只处理 WhatsApp 相关域名
+                if (!url.startsWith("https://web.whatsapp.com") &&
+                    !url.startsWith("https://static.whatsapp.net") &&
+                    !url.startsWith("https://www.whatsapp.com") &&
+                    !url.startsWith("https://mmg.whatsapp.net")) {
+                    return null;
+                }
+                try {
+                    java.net.URL u = new java.net.URL(url);
+                    java.net.HttpURLConnection conn = (java.net.HttpURLConnection) u.openConnection();
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(30000);
+                    conn.setInstanceFollowRedirects(true);
+                    // 转发原始请求头，但去掉 X-Requested-With
+                    for (Map.Entry<String, String> h : request.getRequestHeaders().entrySet()) {
+                        if (!h.getKey().equalsIgnoreCase("X-Requested-With")) {
+                            conn.setRequestProperty(h.getKey(), h.getValue());
+                        }
+                    }
+                    conn.setRequestProperty("User-Agent", CHROME_UA);
+                    // 转发 Cookie
+                    String cookies = CookieManager.getInstance().getCookie(url);
+                    if (cookies != null) conn.setRequestProperty("Cookie", cookies);
+                    int code = conn.getResponseCode();
+                    // 解析 Content-Type
+                    String ct = conn.getContentType();
+                    String mime = "text/html", enc = "UTF-8";
+                    if (ct != null) {
+                        String[] parts = ct.split(";");
+                        mime = parts[0].trim();
+                        for (String p : parts) {
+                            p = p.trim();
+                            if (p.startsWith("charset=")) {
+                                enc = p.substring(8).trim();
+                            }
+                        }
+                    }
+                    // 保存响应 Cookie
+                    List<String> setCookies = conn.getHeaderFields().get("Set-Cookie");
+                    if (setCookies != null) {
+                        for (String c : setCookies) {
+                            CookieManager.getInstance().setCookie(url, c);
+                        }
+                    }
+                    // 构建响应头 Map
+                    Map<String, String> respHeaders = new HashMap<>();
+                    for (Map.Entry<String, List<String>> e : conn.getHeaderFields().entrySet()) {
+                        if (e.getKey() != null && !e.getValue().isEmpty()) {
+                            respHeaders.put(e.getKey(), e.getValue().get(0));
+                        }
+                    }
+                    InputStream is = (code >= 400 && conn.getErrorStream() != null)
+                        ? conn.getErrorStream() : conn.getInputStream();
+                    if (is == null) is = new java.io.ByteArrayInputStream(new byte[0]);
+                    return new WebResourceResponse(mime, enc, code,
+                        code >= 400 ? "Error" : "OK", respHeaders, is);
+                } catch (Exception e) {
+                    return null; // 出错则退回 WebView 默认处理
+                }
             }
         });
 
